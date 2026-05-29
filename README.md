@@ -1,12 +1,3 @@
-*Thinking...*
-
-> The user wants me to draft the README in markdown format for them to copy. They want a clean, copyable markdown file. Let me write the README based on the build plan context provided, without repeating the conversation context.
-> 
-> The user said "drat" which I think means "draft" - a typo.
-> 
-> Let me write a clean, well-structured README.md based on the CareerChat build plan that was discussed, incorporating the Palantir documentation context.
-
-```markdown
 # CareerChat: AI-Powered ORB/CRB Screening Assistant
 
 **CareerChat** is an enterprise-grade screening and comparison tool designed for US Army Branch Managers and the S1 Talent Branch Chief. Powered by GPT-5.1 via Palantir's Artificial Intelligence Platform (AIP), it ingests Officer Record Briefs (ORB), Civilian Record Briefs (CRB), and standard resumes to extract structured qualifications, enable interactive Q&A, and rank candidates against specific operational criteria.
