@@ -1,0 +1,151 @@
+import streamlit as st
+import pandas as pd
+from foundry.transforms import Dataset
+from pypdf import PdfReader
+import io
+
+# Foundry Models
+from language_model_service_api.languagemodelservice_api_completion_v3 import GptChatCompletionRequest
+from language_model_service_api.languagemodelservice_api import ChatMessage, ChatMessageRole
+from palantir_models.models import OpenAiGptChatLanguageModel
+
+# --- 1. Foundry LLM Bridge ---
+class FoundryLLM:
+    def __init__(self):
+        # Ensure this model ID exists in your Foundry environment
+        self.model = OpenAiGptChatLanguageModel.get("GPT_4_1_MINI")
+
+    def invoke(self, prompt: str) -> str:
+        req = GptChatCompletionRequest([ChatMessage(ChatMessageRole.USER, prompt)])
+        res = self.model.create_chat_completion(req)
+        return res.choices[0].message.content
+
+# --- 2. Resource Loading ---
+@st.cache_resource
+def load_raw_data():
+    """
+    Loads resume data by directly parsing PDFs from orb_raw dataset.
+    This is Solution 2 - Direct PDF Parsing.
+    """
+    try:
+        # Get the raw PDF dataset
+        raw_ds = Dataset.get("orb_raw")
+        
+        # Download all files from orb_raw
+        files_map = raw_ds.files().download()
+        
+        records = []
+        progress_bar = st.progress(0, text="Parsing PDF files...")
+        
+        # Filter only PDF files
+        pdf_files = {k: v for k, v in files_map.items() if k.lower().endswith('.pdf')}
+        
+        total_files = len(pdf_files)
+        st.info(f"Found {total_files} PDF files to process...")
+        
+        # Iterate over PDF files and extract text
+        for i, (fname, local_path) in enumerate(pdf_files.items()):
+            try:
+                # Direct PDF parsing using pypdf
+                reader = PdfReader(local_path)
+                text = ""
+                
+                for page in reader.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text += page_text
+                
+                records.append({
+                    "file_name": fname,
+                    "content": text.strip(),
+                    "num_pages": len(reader.pages)
+                })
+                
+            except Exception as read_err:
+                st.warning(f"Could not read {fname}: {read_err}")
+            
+            # Update progress
+            progress_bar.progress((i + 1) / total_files, text=f"Processing {fname} ({i+1}/{total_files})")
+        
+        progress_bar.empty()
+        
+        if records:
+            st.success(f"Successfully parsed {len(records)} resumes!")
+            return pd.DataFrame(records)
+        else:
+            st.error("No resumes could be parsed from the PDF files.")
+            return pd.DataFrame()
+
+    except Exception as e:
+        st.error(f"Critical Error loading raw data: {e}")
+        return pd.DataFrame()
+        
+# --- 3. Main App ---
+def main():
+    st.set_page_config(page_title="Screening RAG EDA", layout="wide")
+    st.title("ORB and CRB Screening Assistant")
+
+    # Load Data
+    df = load_raw_data()
+    
+    if df.empty:
+        st.error("No resumes found. Check dataset names ('orb_raw') and permissions.")
+        return
+
+    st.success(f"System Ready: {len(df)} resumes loaded.")
+
+    # Initialize Chat History
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
+    # Display Chat History
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    # Chat Input
+    if prompt := st.chat_input("Enter Job Description or Question"):
+        # 1. User Message
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        # 2. Assistant Response
+        with st.chat_message("assistant"):
+            message_placeholder = st.empty()
+            
+            # RAG Logic: Context Stuffting
+            # WARNING: If df is large, this will crash the context window. 
+            # We limit to first 5 resumes for this demo.
+            context_df = df.head(5) 
+            
+            context_text = "\n\n".join([
+                f"File: {r['file_name']}\nContent: {r['content'][:2000]}" 
+                for _, r in context_df.iterrows()
+            ]) # Truncated content to avoid token limits
+            
+            with st.spinner("Analyzing..."):
+                try:
+                    llm = FoundryLLM()
+                    
+                    full_prompt = (
+                        "You are an expert Military Strength Manager working for the S1 and Talent Branch Chief. You have access to a dataset of resumes, including Officer Record Briefs (ORB) and Civilian Record Briefs (CRB), formatted in a USAJobs style with military experience details. Your task is to answer user questions about qualifications and career progression based on these resumes. Provide concise summaries in a few bullet points highlighting relevant qualifications and career milestones."
+                        "Try to answer the user's question based on these resumes.\n\n"
+                        f"Resumes:\n{context_text}\n\n"
+                        f"User Question: {prompt}"
+                    )
+                    
+                    response_text = llm.invoke(full_prompt)
+                    
+                    # Add sources
+                    sources = context_df['file_name'].tolist()
+                    response_text += f"\n\n**Sources:**\n" + "\n".join([f"- {s}" for s in sources])
+
+                    message_placeholder.markdown(response_text)
+                    st.session_state.messages.append({"role": "assistant", "content": response_text})
+                
+                except Exception as llm_e:
+                    message_placeholder.error(f"LLM Error: {llm_e}")
+
+if __name__ == "__main__":
+    main()
