@@ -7,7 +7,7 @@
     }
   },
   "postCreateCommand": "bash .devcontainer/secrets.sh && pip install -r requirements.txt 2>/dev/null || true",
-  "postStartCommand": "bash .devcontainer/secrets.sh && which opencode >/dev/null 2>&1 || (curl -fsSL https://opencode.ai/install | bash)",
+  "postStartCommand": "bash .devcontainer/secrets.sh && which opencode >/dev/null 2>&1 || (curl -fsSL https://opencode.ai/install | bash) && (bunx oh-my-openagent install --no-tui --claude=no --openai=no --gemini=no --copilot=no --zai-coding-plan=yes --skip-auth 2>/dev/null || true)",
   "customizations": {
     "vscode": {
       "extensions": [

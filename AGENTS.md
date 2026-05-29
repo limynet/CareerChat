@@ -105,9 +105,11 @@ If `gemini_api`, `z_api`, or `poe_api` are not reaching the container, check tha
 
 ## OpenCode setup
 
-- **Project config**: `opencode.json` at repo root — loads `AGENTS.md` as instructions, pre-configures bash permissions for git/pip/python/pytest
+- **Project config**: `opencode.json` at repo root — loads `AGENTS.md` as instructions, pre-configures bash permissions for git/pip/python/pytest, includes `oh-my-openagent` plugin
+- **Plugin**: `oh-my-openagent` — multi-agent orchestration (Sisyphus, Prometheus, Oracle, Librarian, Explore). Installed via `bunx oh-my-openagent install`
+- **Provider**: Z.ai Coding Plan only (no Claude, no OpenAI). Sisyphus uses `zai-coding-plan/glm-5`, other agents use `opencode/gpt-5-nano` or Z.ai models as fallback
 - **Custom agents**: `.opencode/agent/` — includes `test-runner` subagent for running tests
-- **Devcontainer**: `postStartCommand` auto-installs opencode CLI via `curl -fsSL https://opencode.ai/install | bash` if not present
+- **Devcontainer**: `postStartCommand` auto-installs opencode CLI + oh-my-openagent
 - **VS Code extension**: `sst-dev.opencode` (auto-installed by devcontainer)
 - After changing `opencode.json`, `.opencode/agent/*.md`, or `.opencode/skill/*/SKILL.md`, **restart opencode** for changes to take effect
 
