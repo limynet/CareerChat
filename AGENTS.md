@@ -82,6 +82,19 @@ The repo contains `VantageApp` — an earlier prototype that uses `palantir_mode
 | `OPENAI_API_KEY` | Local dev | Direct OpenAI API key (fallback when not on Vantage) |
 | `MODEL_NAME` | No | Model to use (default: `gpt-5.1`) |
 
+### Secret mapping (devcontainer)
+
+Gitpod secrets are mapped to standard variable names at container startup via `.devcontainer/secrets.sh` and `remoteEnv` in `devcontainer.json`:
+
+| Gitpod secret name | Maps to |
+|---|---|
+| `z_ai` | `OPENAI_API_KEY` |
+| `z_api` | `OPENAI_API_KEY` (fallback) |
+| `gemini_api` | `GEMINI_API_KEY` |
+| `poe_api` | `POE_API_KEY` |
+
+If `gemini_api`, `z_api`, or `poe_api` are not reaching the container, check that they are scoped to this repository in Gitpod Settings → Variables.
+
 ## Vantage / Foundry specifics
 
 - Streamlit apps in Foundry Code Workspaces have a **30-second startup timeout**

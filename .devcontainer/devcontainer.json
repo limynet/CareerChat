@@ -6,8 +6,8 @@
       "version": "3.10"
     }
   },
-  "postCreateCommand": "pip install -r requirements.txt 2>/dev/null || true",
-  "postStartCommand": "which opencode >/dev/null 2>&1 || (curl -fsSL https://opencode.ai/install | bash)",
+  "postCreateCommand": "bash .devcontainer/secrets.sh && pip install -r requirements.txt 2>/dev/null || true",
+  "postStartCommand": "bash .devcontainer/secrets.sh && which opencode >/dev/null 2>&1 || (curl -fsSL https://opencode.ai/install | bash)",
   "customizations": {
     "vscode": {
       "extensions": [
@@ -17,8 +17,17 @@
       ],
       "settings": {
         "python.defaultInterpreterPath": "/usr/local/bin/python",
-        "python.terminal.activateEnvironment": true
+        "python.terminal.activateEnvironment": true,
+        "terminal.integrated.env.linux": {
+          "OPENAI_API_KEY": "${containerEnv:z_ai}",
+          "FOUNDRY_URL": "${containerEnv:FOUNDRY_URL}",
+          "FOUNDRY_TOKEN": "${containerEnv:FOUNDRY_TOKEN}"
+        }
       }
     }
+  },
+  "remoteEnv": {
+    "OPENAI_API_KEY": "${containerEnv:z_ai}",
+    "MODEL_NAME": "gpt-5.1"
   }
 }
