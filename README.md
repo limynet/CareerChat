@@ -1,46 +1,275 @@
-# a read me file for opencode
-The Goal: Build a Streamlit RAG app inside Palantir Foundry (Maestro) to ingest military resumes (ORB/CRB) from the orb_raw dataset, parse them using Docling, and query them using Foundry's native LLM bridge (palantir-models).
-Obstacle 1 (Dependency Hell): Maestro’s base image ships with a conda-managed opencv-python that violently clashed with pip when installing Docling. We bypassed this by forcing Maestro to rebuild the pip environment from scratch.
-Obstacle 2 (The Airgap): Docling’s default StandardPdfPipeline attempts to download RapidOCR weights from modelscope.cn at runtime. Foundry’s network sandbox blocks this, causing silent failures on scanned PDFs.
-Obstacle 3 (Plugin Collisions): To bypass the airgap, you attempted to install internal Vantage OCR plugins (docling-google-ocr and docling-glm-ocr). While docling-glm-ocr installed, it aggressively upgraded your environment to docling 2.96.0 and pandas 3.0.3.
-The Breaking Point: The upgrade to pandas 3.0.3 fundamentally broke palantir-models (which strictly requires pandas<3.0.0), and docling-google-ocr was rendered incompatible with the new Docling 2.96 ecosystem.
-🚦 Current Environment Status
-Docling Core: 🟢 Upgraded to v2.96.0 (via docling-glm-ocr).
-GLM OCR Plugin: 🟡 Installed (v0.5.0), but untested due to environment instability.
-Google OCR Plugin: 🔴 Broken (incompatible with Docling 2.96).
-Palantir Models (LLM Bridge): 🔴 Critical Failure Risk (broken by Pandas 3.0.3).
-Streamlit UI: 🟡 Functional, but throwing deprecation warnings for use_container_width.
-🗺️ The New Building Plan
-To move forward, we need to shift from reactive troubleshooting to a structured build plan. Here are the three phases to finalize your application.
+# CareerChat: AI-Powered ORB/CRB Screening Assistant
 
-Phase 1: Environment Triage & Stabilization (Immediate)
-Before writing any more app code, we must rescue palantir-models and clean up the dead Google OCR package.
+**CareerChat** is an enterprise-grade screening and comparison tool designed for US Army Branch Managers and the S1 Talent Branch Chief. Powered by GPT-5.1 via Palantir's Artificial Intelligence Platform (AIP), it ingests Officer Record Briefs (ORB), Civilian Record Briefs (CRB), and standard resumes to extract structured qualifications, enable interactive Q&A, and rank candidates against specific operational criteria.
 
-Run these commands in your Maestro terminal:
+---
 
-bash
-# 1. Rip out the incompatible Google OCR package
-maestro env pip uninstall docling-google-ocr
+## 🔄 Evolution from `VantageApp`
 
-# 2. Downgrade pandas to save the Palantir LLM bridge 
-# (Docling-core supports pandas 2.x, so this is safe)
-maestro env pip install "pandas>=2.1.4,<3.0.0"
+This repository supersedes the legacy `VantageApp` prototype.
 
-Phase 2: The OCR Strategy (Choose Your Path)
-With the environment stabilized, you have two viable paths for handling the scanned/image-based ORB/CRB PDFs.
+| Capability | `VantageApp` (Legacy) | `CareerChat` (Current) |
+| :--- | :--- | :--- |
+| **LLM** | GPT-4.1-mini | GPT-5.1 |
+| **Document Parsing** | `pypdf` (text-layer only) | `pdfplumber` + `python-docx` |
+| **Data Extraction** | Raw context stuffing | Structured Pydantic models via LLM |
+| **Analysis** | Single-document chat | Multi-candidate comparison & ranking |
+| **AI Integration** | `palantir_models` SDK | OpenAI-compatible SDK via AIP Proxy |
+| **Data Sources** | Foundry Datasets only | File Upload + Foundry Datasets + SparkSQL |
 
-Path A: The GLM Plugin Route (If it survives the Pandas downgrade)
-If docling-glm-ocr doesn't break when we downgrade Pandas, use the diagnostic script we discussed to find its Options class, and inject it into PdfPipelineOptions. This keeps everything inside the Docling pipeline.
+---
 
-Path B: The Vision-LLM Route (Highly Recommended for Foundry)
-If the GLM plugin breaks due to the Pandas downgrade, abandon local OCR entirely. Foundry natively supports multimodal models. Instead of fighting Docling's OCR dependencies, use pymupdf to convert scanned PDF pages to images, and pass those images directly to Foundry's GPT-4o Vision model via palantir-models.
+## 🏗️ Architecture & AIP Integration
 
-Why this is better: It completely sidesteps the modelscope.cn airgap issue, requires zero heavy OCR dependencies (no rapidocr, no easyocr), and leverages Foundry's secure, enterprise-grade vision APIs.
-Phase 3: App Architecture & Polish
-Once the parsing pipeline is locked, upgrade the application logic:
+```text
+┌─────────────────────────────────────────────────┐
+│                  Streamlit UI                    │
+│  ┌──────────┐  ┌──────────┐  ┌───────────────┐  │
+│  │ Upload   │  │ Chat     │  │ Compare/Rank  │  │
+│  │ PDF/DOCX │  │ about    │  │ candidates    │  │
+│  └────┬─────┘  │ candidate│  │ side-by-side  │  │
+│       │        └────┬─────┘  └───────┬───────┘  │
+└───────┼─────────────┼────────────────┼──────────┘
+        │             │                │
+        ▼             ▼                ▼
+┌─────────────────────────────────────────────────┐
+│                  src/ backend                    │
+│  ┌──────────┐  ┌──────────┐  ┌───────────────┐  │
+│  │ Parsers  │  │ AI       │  │ DB            │  │
+│  │ pdfplumb │  │ OpenAI   │  │ Vantage       │  │
+│  │ docx     │  │ SDK      │  │ SparkSQL      │  │
+│  └──────────┘  └──────────┘  └───────────────┘  │
+└─────────────────────────────────────────────────┘
+```
 
-Fix Streamlit Deprecations: Do a global find-and-replace in your code. Change use_container_width=True to width="stretch" to eliminate the console warnings.
-Smarter Context Retrieval: Right now, your RAG logic uses df.head(5). This means the LLM only ever sees the first 5 resumes in the dataframe. Upgrade this to a basic keyword-matching filter or implement a lightweight vector store (like FAISS or ChromaDB, if permitted in Vantage) to retrieve the most relevant resumes based on the user's prompt.
-Asynchronous Parsing: Docling parsing is CPU-intensive. Move the load_raw_data() execution to a background task or cache it aggressively so the Streamlit UI doesn't lock up for 5 minutes every time the app boots.
-🎯 Your Next Immediate Action
-Execute the two maestro env pip commands from Phase 1. Once the lockfile is written successfully, try importing palantir_models and docling_glm_ocr in a Python shell to verify both survived the Pandas downgrade. Let me know the result, and we will execute either Path A or Path B for the OCR strategy.
+### Dual-Mode AI Client
+
+CareerChat leverages **Palantir's LLM-provider compatible APIs**, which proxy requests to underlying
+models while enforcing AIP data governance, zero data retention (ZDR), and rate limiting.
+
+| Environment | Condition | Client Configuration |
+| :--- | :--- | :--- |
+| **Army Vantage / Foundry** | `FOUNDRY_URL` is set | `openai.OpenAI(base_url=f"{FOUNDRY_URL}/api/v2/llm/proxy/openai/v1", api_key=FOUNDRY_TOKEN)` |
+| **Local Development** | `FOUNDRY_URL` is absent | `openai.OpenAI(api_key=OPENAI_API_KEY)` |
+
+> **Note:** The `palantir_models` SDK is reserved for batch Python transforms only.
+> Interactive Streamlit applications must use the OpenAI-compatible REST proxy.
+
+---
+
+## 📁 Project Structure
+
+```
+careerchat/
+├── app.py                    # Main Streamlit application
+├── requirements.txt
+├── test_backend.py           # CLI end-to-end test
+├── .gitignore
+├── src/
+│   ├── __init__.py
+│   ├── config.py             # Env vars, auto-detect Vantage vs local
+│   ├── ai/
+│   │   ├── __init__.py
+│   │   ├── client.py         # Dual-mode OpenAI client
+│   │   ├── extractor.py      # LLM extraction → Pydantic
+│   │   └── prompts.py        # System prompts
+│   ├── models/
+│   │   ├── __init__.py
+│   │   └── candidate.py      # Pydantic Candidate schema
+│   ├── parsers/
+│   │   ├── __init__.py
+│   │   ├── pdf_parser.py     # pdfplumber text extraction
+│   │   └── docx_parser.py    # python-docx text extraction
+│   └── db/
+│       ├── __init__.py
+│       └── vantage.py        # SparkSQL / Foundry dataset interface
+└── tests/
+    └── test_parsers.py
+```
+
+---
+
+## 📊 Candidate Data Model
+
+Documents are parsed and passed to the LLM to extract a structured Pydantic model, ensuring
+consistent downstream analysis and comparison.
+
+```python
+# src/models/candidate.py
+from pydantic import BaseModel
+
+class Candidate(BaseModel):
+    name: str
+    rank: str | None = None
+    branch: str | None = None
+    mos: str | None = None              # Military Occupational Specialty
+    education: list[str] | None = None
+    assignments: list[str] | None = None
+    skills: list[str] | None = None
+    certifications: list[str] | None = None
+    years_of_service: int | None = None
+    deployments: list[str] | None = None
+    awards: list[str] | None = None
+    raw_text: str                       # Full extracted text from document
+    source_file: str                    # Original filename
+```
+
+---
+
+## 🔑 Environment Variables
+
+| Variable | Required | Purpose |
+| :--- | :--- | :--- |
+| `FOUNDRY_URL` | In Vantage | Base URL of the Foundry instance (e.g. `https://vantage.army.mil`) |
+| `FOUNDRY_TOKEN` | In Vantage | Bearer token for Foundry API auth |
+| `OPENAI_API_KEY` | Local dev | Direct OpenAI API key (fallback when not on Vantage) |
+| `MODEL_NAME` | Optional | Model override (default: `gpt-5.1`) |
+
+---
+
+## 🛠️ Local Development
+
+### 1. Clone and set up environment
+
+```bash
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+### 2. Configure environment variables
+
+Create a `.env` file in the project root (already listed in `.gitignore`):
+
+```env
+OPENAI_API_KEY=sk-...
+MODEL_NAME=gpt-5.1
+```
+
+### 3. Test the backend (CLI)
+
+```bash
+python test_backend.py path/to/resume.pdf
+# → parses → extracts → prints structured Candidate JSON
+```
+
+### 4. Run the application
+
+```bash
+streamlit run app.py
+```
+
+---
+
+## 🏛️ Army Vantage / Foundry Deployment
+
+Deploying CareerChat in Palantir Foundry requires adherence to Code Workspace constraints and
+AIP security governance.
+
+### 1. Managed Environments (Maestro)
+
+Do **not** use raw `pip install` in the terminal. Use Maestro to ensure the environment is
+consistently restored across workspace restarts, published apps, and notebook transforms.
+
+```bash
+maestro env pip install streamlit openai pdfplumber python-docx pydantic
+```
+
+This updates `/home/user/repo/.envs/maestro/meta.yaml` and regenerates the `hawk.lock` file.
+Both files should be committed to version control.
+
+To sync your environment after pulling new changes or switching branches:
+
+```bash
+maestro env install
+```
+
+### 2. Publishing the Streamlit App
+
+1. Open the **Applications** tab in your JupyterLab® Code Workspace.
+2. Select **Publish application**.
+3. Point the file path to `app.py`.
+4. Select **Publish and sync** to trigger CI checks and deploy.
+
+> ⚠️ **Critical Constraint:** Published Streamlit apps have a strict **30-second startup timeout**.
+> The server must fully initialize within this window or the deployment will fail.
+> Keep top-level imports lean. Defer heavy processing (model loading, DB queries) until
+> after first user interaction.
+
+### 3. LLM Authentication on Vantage
+
+On Vantage, the `FOUNDRY_TOKEN` environment variable is automatically available. The app routes
+all LLM requests through the AIP-governed proxy:
+
+```
+POST /api/v2/llm/proxy/openai/v1/chat/completions
+Authorization: Bearer {FOUNDRY_TOKEN}
+```
+
+Only models enabled on your enrollment are accessible through this endpoint. Usage is visible
+in the Foundry Resource Management application and is subject to rate limiting.
+
+---
+
+## 🚀 Build Roadmap
+
+### Phase 1 — Backend & Extraction Pipeline
+*Goal: Working parsing and AI extraction testable from the CLI.*
+
+- [ ] `requirements.txt` — `streamlit`, `openai`, `pdfplumber`, `python-docx`, `pydantic`
+- [ ] `.gitignore` — `__pycache__/`, `.env`, `.streamlit/secrets.toml`, uploaded files
+- [ ] `src/config.py` — load env vars, auto-detect Vantage vs local
+- [ ] `src/models/candidate.py` — Pydantic `Candidate` schema
+- [ ] `src/parsers/pdf_parser.py` — `extract_text(file_bytes) -> str` via `pdfplumber`
+- [ ] `src/parsers/docx_parser.py` — `extract_text(file_bytes) -> str` via `python-docx`
+- [ ] `src/ai/client.py` — `get_client() -> OpenAI` dual-mode factory
+- [ ] `src/ai/prompts.py` — `EXTRACTION_PROMPT`, `CANDIDATE_QA_PROMPT`, `COMPARE_RANK_PROMPT`
+- [ ] `src/ai/extractor.py` — `extract_candidate(raw_text, filename) -> Candidate`
+- [ ] `src/db/vantage.py` — stub `save_candidate()`, `get_candidates()`, `compare_candidates()`
+- [ ] `tests/test_parsers.py` — unit tests for PDF and DOCX extractors
+- [ ] `test_backend.py` — CLI end-to-end: parse → extract → print JSON
+
+### Phase 2 — Streamlit Application
+*Goal: Interactive UI for upload, chat, and comparison.*
+
+- [ ] `app.py` — main app with sidebar navigation
+- [ ] Upload UI — PDF/DOCX upload, parse, display structured `Candidate` result
+- [ ] Single-candidate chat — pick a candidate, ask qualifications questions
+- [ ] Compare & rank — multi-select candidates, AI side-by-side evaluation
+- [ ] Session state — `st.session_state` for candidates list and chat history
+
+### Phase 3 — Vantage Integration & Persistence
+*Goal: Persistent storage and production deployment on Army Vantage.*
+
+- [ ] Implement SparkSQL client in `src/db/vantage.py`
+- [ ] Store parsed candidates persistently to Foundry dataset
+- [ ] Query historical candidate data in the UI
+- [ ] Publish Streamlit app via JupyterLab Applications tab
+- [ ] Configure managed environment via `maestro env pip install`
+
+### Phase 4 — Documentation & Polish
+
+- [ ] Finalize `README.md` with dataset media link (TBD)
+- [ ] Update `AGENTS.md` with conventions discovered during build
+
+---
+
+## ⚙️ Key Design Decisions
+
+1. **`pdfplumber` + `python-docx`** for text extraction — not Docling (failed in prior attempts).
+2. **OpenAI-compatible proxy** for Foundry AI — standard `openai` SDK, not `palantir_models` transforms SDK.
+3. **Pydantic** for structured candidate data validation and LLM output parsing.
+4. **Streamlit session state** for ephemeral in-session data; **Vantage/SparkSQL** for persistence.
+5. **30-second startup timeout** — app must stay lean for Foundry Code Workspace deployment.
+6. **Dual-mode AI client** — identical code path works on Vantage and locally without modification.
+
+---
+
+## 📚 References
+
+- [Palantir AIP — LLM-Provider Compatible APIs](https://www.palantir.com/docs/foundry/aip/llm-provider-compatible-apis/)
+- [Palantir AIP — Overview](https://www.palantir.com/docs/foundry/aip/overview/)
+- [Code Workspaces — JupyterLab® Deployment](https://www.palantir.com/docs/foundry/code-workspaces/jupyterlab/)
+- [Model Integration — Overview](https://www.palantir.com/docs/foundry/model-integration/overview/)
+- [Army Vantage JupyterLab Docs](https://vantage.army.mil/docs/foundry/code-workspaces/jupyterlab#jupyterlab)
+```
