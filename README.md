@@ -14,7 +14,7 @@ This repository supersedes the legacy `VantageApp` prototype.
 | **Document Parsing** | `pypdf` (text-layer only) | `pdfplumber` + `python-docx` |
 | **Data Extraction** | Raw context stuffing | Structured Pydantic models via LLM |
 | **Analysis** | Single-document chat | Multi-candidate comparison & ranking |
-| **AI Integration** | `palantir_models` SDK | OpenAI-compatible SDK via AIP Proxy |
+| **AI Integration** | `palantir_models` SDK | `palantir_models` SDK (primary) + OpenAI-compatible SDK (fallback/local) |
 | **Data Sources** | Foundry Datasets only | File Upload + Foundry Datasets + SparkSQL |
 
 ---
@@ -36,24 +36,25 @@ This repository supersedes the legacy `VantageApp` prototype.
 │                  src/ backend                    │
 │  ┌──────────┐  ┌──────────┐  ┌───────────────┐  │
 │  │ Parsers  │  │ AI       │  │ DB            │  │
-│  │ pdfplumb │  │ OpenAI   │  │ Vantage       │  │
-│  │ docx     │  │ SDK      │  │ SparkSQL      │  │
-│  └──────────┘  └──────────┘  └───────────────┘  │
+│  │ pdfplumb │  │ palantir │  │ Vantage       │  │
+│  │ docx     │  │ _models  │  │ SparkSQL      │  │
+│  └──────────┘  │ + OpenAI │  └───────────────┘  │
+│                │  fallback│                     │
+│                └──────────┘                     │
 └─────────────────────────────────────────────────┘
 ```
 
-### Dual-Mode AI Client
+### Three-Mode AI Client
 
-CareerChat leverages **Palantir's LLM-provider compatible APIs**, which proxy requests to underlying
-models while enforcing AIP data governance, zero data retention (ZDR), and rate limiting.
+CareerChat uses a three-mode AI client, auto-detected at runtime by `src/ai/client.py`.
 
-| Environment | Condition | Client Configuration |
+| Mode | Trigger | Client Configuration |
 | :--- | :--- | :--- |
-| **Army Vantage / Foundry** | `FOUNDRY_URL` is set | `openai.OpenAI(base_url=f"{FOUNDRY_URL}/api/v2/llm/proxy/openai/v1", api_key=FOUNDRY_TOKEN)` |
-| **Local Development** | `FOUNDRY_URL` is absent | `openai.OpenAI(api_key=OPENAI_API_KEY)` |
+| **Foundry SDK** (primary) | `palantir_models` importable | `OpenAiGptChatLanguageModel.get("GPT_5_1")` — no API key needed |
+| **Foundry proxy** (fallback) | `FOUNDRY_URL` is set | `openai.OpenAI(base_url=f"{FOUNDRY_URL}/api/v2/llm/proxy/openai/v1", api_key=FOUNDRY_TOKEN)` |
+| **Local Development** | Neither above | `openai.OpenAI(api_key=OPENAI_API_KEY)` |
 
-> **Note:** The `palantir_models` SDK is reserved for batch Python transforms only.
-> Interactive Streamlit applications must use the OpenAI-compatible REST proxy.
+The `palantir_models` SDK is the primary LLM integration on Vantage. It works in both batch transforms and interactive Streamlit apps, using Foundry's internal authentication with no explicit API key required. The OpenAI-compatible proxy is available as a fallback when `palantir_models` isn't available.
 
 ---
 
@@ -120,8 +121,8 @@ class Candidate(BaseModel):
 
 | Variable | Required | Purpose |
 | :--- | :--- | :--- |
-| `FOUNDRY_URL` | In Vantage | Base URL of the Foundry instance (e.g. `https://vantage.army.mil`) |
-| `FOUNDRY_TOKEN` | In Vantage | Bearer token for Foundry API auth |
+| `FOUNDRY_URL` | In Vantage (fallback) | Base URL of the Foundry instance (e.g. `https://vantage.army.mil`) |
+| `FOUNDRY_TOKEN` | In Vantage (fallback) | Bearer token for Foundry proxy auth — not needed if `palantir_models` is available |
 | `OPENAI_API_KEY` | Local dev | Direct OpenAI API key (fallback when not on Vantage) |
 | `MODEL_NAME` | Optional | Model override (default: `gpt-5.1`) |
 
@@ -198,15 +199,16 @@ maestro env install
 
 ### 3. LLM Authentication on Vantage
 
-On Vantage, the `FOUNDRY_TOKEN` environment variable is automatically available. The app routes
-all LLM requests through the AIP-governed proxy:
+On Vantage, the app first attempts to use the `palantir_models` SDK (`OpenAiGptChatLanguageModel`), which authenticates automatically through Foundry's internal auth. No API key or token is needed in this mode.
+
+If `palantir_models` is not available, the app falls back to the AIP-governed proxy using the `FOUNDRY_TOKEN` environment variable:
 
 ```
 POST /api/v2/llm/proxy/openai/v1/chat/completions
 Authorization: Bearer {FOUNDRY_TOKEN}
 ```
 
-Only models enabled on your enrollment are accessible through this endpoint. Usage is visible
+Only models enabled on your enrollment are accessible through either path. Usage is visible
 in the Foundry Resource Management application and is subject to rate limiting.
 
 ---
@@ -257,11 +259,11 @@ in the Foundry Resource Management application and is subject to rate limiting.
 ## ⚙️ Key Design Decisions
 
 1. **`pdfplumber` + `python-docx`** for text extraction — not Docling (failed in prior attempts).
-2. **OpenAI-compatible proxy** for Foundry AI — standard `openai` SDK, not `palantir_models` transforms SDK.
+2. **`palantir_models` SDK** as primary Foundry AI integration — uses internal auth (no API key). OpenAI-compatible proxy available as fallback; standard `openai` SDK for local dev.
 3. **Pydantic** for structured candidate data validation and LLM output parsing.
 4. **Streamlit session state** for ephemeral in-session data; **Vantage/SparkSQL** for persistence.
 5. **30-second startup timeout** — app must stay lean for Foundry Code Workspace deployment.
-6. **Dual-mode AI client** — identical code path works on Vantage and locally without modification.
+6. **Three-mode AI client** — auto-detects Foundry SDK, Foundry proxy, or direct OpenAI at runtime.
 
 ---
 

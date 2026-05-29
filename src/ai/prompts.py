@@ -20,6 +20,7 @@ IMPORTANT:
 - Use null for fields where no information is found
 - Be precise with military terminology and abbreviations
 - Return valid JSON matching the Candidate schema
+- Your response MUST be a valid JSON object. Do not include any text before or after the JSON. Do not wrap it in markdown code blocks.
 
 Respond with ONLY the JSON object, no additional text or explanation."""
 

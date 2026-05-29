@@ -8,7 +8,7 @@ US Army branch manager tool. Upload Resume PDF or ORB (Officer Record Brief) doc
 
 - **Frontend**: Streamlit (`streamlit run app.py`)
 - **Language**: Python 3.10+
-- **AI**: GPT-5.1 via Army Vantage (Palantir Foundry) OpenAI-compatible proxy, or direct OpenAI API for local dev
+- **AI**: GPT-5.1 via `palantir_models` SDK on Foundry (internal auth), OpenAI-compatible proxy (fallback), or direct OpenAI API for local dev
 - **Data**: Army Vantage (Palantir Foundry) with SparkSQL
 - **Parsing**: `pdfplumber` (PDF) + `python-docx` (DOCX) — previous Docling backend failed, do not reintroduce it
 - **Validation**: `pydantic` for structured candidate data
@@ -50,35 +50,33 @@ CareerChat/
 
 ## AI client — how it works
 
-Two modes, auto-detected by `src/ai/client.py`:
+Three modes, auto-detected by `src/ai/client.py`:
 
 | Mode | Trigger | Config |
 |---|---|---|
-| **Vantage/Foundry proxy** | `FOUNDRY_URL` env var set | `base_url={FOUNDRY_URL}/api/v2/llm/proxy/openai/v1`, `api_key=FOUNDRY_TOKEN` |
-| **Direct OpenAI** (local dev) | `FOUNDRY_URL` not set | `api_key=OPENAI_API_KEY` |
+| **Foundry SDK** (primary) | `palantir_models` importable | `OpenAiGptChatLanguageModel.get("GPT_5_1")` — no API key needed |
+| **Foundry proxy** (fallback) | `FOUNDRY_URL` env var set | `openai.OpenAI(base_url={FOUNDRY_URL}/api/v2/llm/proxy/openai/v1, api_key=FOUNDRY_TOKEN)` |
+| **Direct OpenAI** (local dev) | Neither above | `openai.OpenAI(api_key=OPENAI_API_KEY)` |
 
-Both use the standard `openai` Python SDK with identical request/response shapes. Foundry's proxy is OpenAI-compatible — same `chat.completions.create()` call.
-
-Do NOT use `palantir_models` (`GenericCompletionLanguageModelInput`, etc.) in the Streamlit app — those are for Foundry Python transforms (batch pipelines), not interactive apps.
+The `palantir_models` SDK is the primary mode on Vantage. It uses Foundry's internal authentication, so no explicit API key or token is required. The proxy and direct OpenAI modes both use the standard `openai` Python SDK with identical request/response shapes.
 
 ## Existing prototype: `VantageApp`
 
-The repo contains `VantageApp` — an earlier prototype that uses `palantir_models.models.OpenAiGptChatLanguageModel` with `GPT_4_1_MINI` and `pypdf`. It reads PDFs from Foundry datasets (`orb_raw`) and has a basic chat interface. This file is kept as reference. The new `app.py` will:
+The repo contains `VantageApp` — an earlier prototype that uses `palantir_models.models.OpenAiGptChatLanguageModel` with `GPT_4_1_MINI` and `pypdf`. It reads PDFs from Foundry datasets (`orb_raw`) and has a basic chat interface. This file is kept as reference. The new `app.py` shares the same `palantir_models` integration as the prototype, with these upgrades:
 
 - Upgrade from GPT-4.1-mini to GPT-5.1
 - Switch from `pypdf` to `pdfplumber` (better text extraction)
 - Add DOCX support via `python-docx`
 - Add structured candidate extraction with Pydantic
 - Add candidate comparison and ranking
-- Use the OpenAI-compatible proxy (not `palantir_models` direct) for the Streamlit app
-- Support local dev outside Vantage via direct OpenAI API
+- Use `palantir_models` SDK as primary Vantage integration (same as prototype), with OpenAI-compatible proxy as fallback and direct OpenAI for local dev
 
 ## Environment variables
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `FOUNDRY_URL` | In Vantage | Base URL of the Foundry instance (e.g. `https://vantage.army.mil`) |
-| `FOUNDRY_TOKEN` | In Vantage | Bearer token for Foundry API auth |
+| `FOUNDRY_URL` | In Vantage (fallback) | Base URL of the Foundry instance (e.g. `https://vantage.army.mil`) |
+| `FOUNDRY_TOKEN` | In Vantage (fallback) | Bearer token for Foundry proxy auth — not needed if `palantir_models` is available |
 | `OPENAI_API_KEY` | Local dev | Direct OpenAI API key (fallback when not on Vantage) |
 | `MODEL_NAME` | No | Model to use (default: `gpt-5.1`) |
 
