@@ -1,0 +1,41 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": ["AGENTS.md"],
+  "shell": "/bin/bash",
+  "share": "disabled",
+  "autoupdate": "notify",
+  "snapshot": true,
+  "permission": {
+    "bash": {
+      "git *": "allow",
+      "pip install*": "allow",
+      "python *": "allow",
+      "pytest*": "allow",
+      "streamlit *": "allow",
+      "*": "ask"
+    },
+    "edit": "ask",
+    "external_directory": {
+      "/tmp/*": "allow",
+      "*": "ask"
+    }
+  },
+  "watcher": {
+    "ignore": [
+      "**/__pycache__/**",
+      "**/*.pyc",
+      ".git/**",
+      "node_modules/**",
+      "**/.env",
+      "**/.streamlit/**"
+    ]
+  },
+  "tool_output": {
+    "max_lines": 2000,
+    "max_bytes": 51200
+  },
+  "compaction": {
+    "auto": true,
+    "tail_turns": 15
+  }
+}

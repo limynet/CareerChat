@@ -90,11 +90,18 @@ The repo contains `VantageApp` — an earlier prototype that uses `palantir_mode
 - Environment tracked in `/home/user/repo/.envs/maestro/meta.yaml` and `hawk.lock`
 - Docs: https://www.palantir.com/docs/foundry/code-workspaces/jupyterlab/
 
+## OpenCode setup
+
+- **Project config**: `opencode.json` at repo root — loads `AGENTS.md` as instructions, pre-configures bash permissions for git/pip/python/pytest
+- **Custom agents**: `.opencode/agent/` — includes `test-runner` subagent for running tests
+- **Devcontainer**: `postStartCommand` auto-installs opencode CLI via `curl -fsSL https://opencode.ai/install | bash` if not present
+- **VS Code extension**: `sst-dev.opencode` (auto-installed by devcontainer)
+- After changing `opencode.json`, `.opencode/agent/*.md`, or `.opencode/skill/*/SKILL.md`, **restart opencode** for changes to take effect
+
 ## Environment
 
-- **Dev container**: `mcr.microsoft.com/devcontainers/universal:4.0.1-noble` (image only, no Dockerfile).
+- **Dev container**: `mcr.microsoft.com/devcontainers/universal:4.0.1-noble` with Python 3.10 feature.
 - **Container name** in devcontainer.json is `"Ona"`.
-- **Recommended extension**: `sst-dev.opencode` (VS Code).
 - **Git LFS** is enabled but has no tracked patterns yet (no `.gitattributes`).
 
 ## Git
