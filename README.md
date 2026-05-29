@@ -1,2 +1,1 @@
-# CareerChat
-Config files for my GitHub profile.
+# a read me file for opencode
